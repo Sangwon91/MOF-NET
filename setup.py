@@ -12,7 +12,7 @@ setup(
     install_requires=install_requires,
     author="Sangwon Lee",
     author_email="integratedmailsystem@gmail.com",
-    packages=find_packages(include=["mofnet"]),
+    packages=["mofnet"],
     python_requires=">=3.5",
     zip_safe=False
 )
