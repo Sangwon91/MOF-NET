@@ -3,18 +3,24 @@ import tensorflow.keras as keras
 
 
 class SelfWeight(keras.layers.Layer):
-    def __init__(self, emb_size):
+    def __init__(self, emb_size, out_size=None):
         super().__init__()
 
+        if out_size is None:
+            self.out_size = emb_size
+        else:
+            self.out_size = out_size
+
         self.emb_size = emb_size
-        units = 3*emb_size*emb_size
+
+        units = 3 * self.out_size * self.emb_size
         self.dense = keras.layers.Dense(units=units, activation=tf.math.tanh)
 
     def call(self, x):
         B = x.shape[0]
 
         x = self.dense(x)
-        weight = tf.reshape(x, [B, 3, self.emb_size, self.emb_size])
+        weight = tf.reshape(x, [B, 3, self.out_size, self.emb_size])
 
         return weight
 
@@ -45,9 +51,15 @@ class MOFNet(keras.Model):
         super().__init__()
 
         default_parameters = {
+            "num_topos": 3000,
+            "num_nodes": 1000,
+            "num_edges": 300,
             "topo_emb_size": 128,
             "node_emb_size": 128,
             "edge_emb_size": 128,
+            "node_self_size": 128,
+            "edge_self_size": 128,
+            "mof_emb_size": 64,
             "dropout_rate": 0.5,
             "activation": tf.nn.relu,
         }
@@ -59,29 +71,41 @@ class MOFNet(keras.Model):
             else:
                 params[key] = default_parameters[key]
 
+        num_topos = params["num_topos"]
+        num_nodes = params["num_nodes"]
+        num_edges = params["num_edges"]
         topo_emb_size = params["topo_emb_size"]
         node_emb_size = params["node_emb_size"]
         edge_emb_size = params["edge_emb_size"]
+        node_self_size = params["node_self_size"]
+        edge_self_size = params["edge_self_size"]
+        mof_emb_size = params["mof_emb_size"]
         dropout_rate = params["dropout_rate"]
         self.activation = params["activation"]
 
         self.topo_embedding = keras.layers.Embedding(
-                                  input_dim=3000, output_dim=topo_emb_size)
+                                  input_dim=num_topos,
+                                  output_dim=topo_emb_size,
+                              )
         self.node_embedding = keras.layers.Embedding(
-                                  input_dim=1000, output_dim=node_emb_size)
+                                  input_dim=num_nodes,
+                                  output_dim=node_emb_size,
+                              )
         self.edge_embedding = keras.layers.Embedding(
-                                  input_dim=300, output_dim=edge_emb_size)
+                                  input_dim=num_edges,
+                                  output_dim=edge_emb_size,
+                              )
 
         self.dropout = keras.layers.Dropout(dropout_rate)
 
-        self.node_weight = SelfWeight(node_emb_size)
-        self.edge_weight = SelfWeight(edge_emb_size)
+        self.node_weight = SelfWeight(node_emb_size, node_self_size)
+        self.edge_weight = SelfWeight(edge_emb_size, edge_self_size)
 
         self.node_batchnorm = keras.layers.BatchNormalization()
         self.edge_batchnorm = keras.layers.BatchNormalization()
 
-        first_size = 3*node_emb_size + 3*edge_emb_size
-        self.interaction_weight = InteractionWeight(first_size, 64)
+        first_size = 3*node_self_size + 3*edge_self_size
+        self.interaction_weight = InteractionWeight(first_size, mof_emb_size)
         self.interaction_batchrnom = keras.layers.BatchNormalization()
 
         self.hidden_dense = keras.layers.Dense(units=32, use_bias=False)
@@ -113,13 +137,14 @@ class MOFNet(keras.Model):
         node_emb = self.dropout(node_emb, training=training)
 
         # Apply self interaction in topology.
-        # node_weight: (B, 3, E, E), node_emb: (B, 3, E).
+        # node_weight: (B, 3, Eout, E), node_emb: (B, 3, E).
+        # Result: (B, 3, Eout).
         node_weight = self.node_weight(topo_emb)
         node_emb = tf.einsum("ijkl,ijl->ijk", node_weight, node_emb)
         node_emb = self.node_batchnorm(node_emb, training=training)
         node_emb = activation(node_emb)
-        # Apply mask and reshape to [B, 3*node_emb_size]
-        shape = node_x.shape + [self.node_embedding.output_dim]
+        # Apply mask and reshape to [B, 3*node_self_size]
+        shape = node_x.shape + [self.node_weight.out_size]
         mask = tf.broadcast_to(node_x[:, :, tf.newaxis], shape=shape)
         mask = (mask >= 0)
         node_emb = tf.where(mask, node_emb, tf.zeros_like(node_emb))
@@ -131,13 +156,14 @@ class MOFNet(keras.Model):
         edge_emb = self.dropout(edge_emb, training=training)
 
         # Apply self interaction in topology.
-        # edge_weight: (B, 3, E, E), edge_emb: (B, 3, E).
+        # edge_weight: (B, 3, Eout, E), edge_emb: (B, 3, E).
+        # Result: (B, 3, Eout).
         edge_weight = self.edge_weight(topo_emb)
         edge_emb = tf.einsum("ijkl,ijl->ijk", edge_weight, edge_emb)
         edge_emb = self.edge_batchnorm(edge_emb, training=training)
         edge_emb = activation(edge_emb)
-        # Apply mask and reshape to [B, 3*node_emb_size]
-        shape = edge_x.shape + [self.edge_embedding.output_dim]
+        # Apply mask and reshape to [B, 3*node_self_size]
+        shape = edge_x.shape + [self.edge_weight.out_size]
         mask = tf.broadcast_to(edge_x[:, :, tf.newaxis], shape=shape)
         mask = (mask >= 0)
         edge_emb = tf.where(mask, edge_emb, tf.zeros_like(edge_emb))
