@@ -1,1 +1,2 @@
-from .mofnet import MOFNet, DataLoader
+from .model import MOFNet
+from .dataset import  DataLoader
