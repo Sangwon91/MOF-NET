@@ -1,7 +1,7 @@
 # MOF-NET
 
-`Tensorflow 2.x` implementation of [MOF-NET](http://advances.sciencemag.org/lookup/doi/10.1126/sciadv.aax9324).
-Predict properties of MOFs from topology and building blocks.
+`Tensorflow 2.x` implementation of [MOF-NET](http://advances.sciencemag.org/lookup/doi/10.1126/sciadv.aax9324).  
+Deep neural network for the prediction of MOF properties from topology and building blocks.
 
 ![](doc/mofnet.png)
 
