@@ -115,9 +115,13 @@ class MOFNet(keras.Model):
 
     def initialize_weights(self):
         self.call(tf.zeros(shape=[1, 7]))
+        self.built = True
 
     @tf.function
-    def calculate_mof_embedding(self, x, training=False):
+    def calculate_mof_embedding(self, x, training=False, dropout=None):
+        if dropout is None:
+            dropout = training
+
         activation = self.activation
         # B: batch size.
         B = x.shape[0]
@@ -129,12 +133,12 @@ class MOFNet(keras.Model):
         topo_emb = self.topo_embedding(topo_x)
         topo_emb = tf.reshape(topo_emb, [B, -1])
         # Dropout to topology embedding.
-        topo_emb = self.dropout(topo_emb, training=training)
+        topo_emb = self.dropout(topo_emb, training=dropout)
 
         # Make node embedding. ---------------------------------------
         node_x = tf.where(node_x >= 0, node_x, tf.zeros_like(node_x))
         node_emb = self.node_embedding(node_x)
-        node_emb = self.dropout(node_emb, training=training)
+        node_emb = self.dropout(node_emb, training=dropout)
 
         # Apply self interaction in topology.
         # node_weight: (B, 3, Eout, E), node_emb: (B, 3, E).
@@ -153,7 +157,7 @@ class MOFNet(keras.Model):
         # Make edge embedding. ---------------------------------------
         edge_x = tf.where(edge_x >= 0, edge_x, tf.zeros_like(edge_x))
         edge_emb = self.edge_embedding(edge_x)
-        edge_emb = self.dropout(edge_emb, training=training)
+        edge_emb = self.dropout(edge_emb, training=dropout)
 
         # Apply self interaction in topology.
         # edge_weight: (B, 3, Eout, E), edge_emb: (B, 3, E).
@@ -181,9 +185,9 @@ class MOFNet(keras.Model):
         return x
 
     @tf.function
-    def call(self, x, training=False):
+    def call(self, x, training=False, dropout=None):
         # x: (B, 64).
-        x = self.calculate_mof_embedding(x, training)
+        x = self.calculate_mof_embedding(x, training, dropout)
 
         # Apply MLP to predict property.
         # x: (B, 32).
