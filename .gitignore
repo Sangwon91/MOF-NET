@@ -4,3 +4,5 @@ build
 *.ipynb_check*
 __pycache__
 cycle_tot
+plugins
+events.*
