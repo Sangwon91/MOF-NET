@@ -2,3 +2,4 @@ mofnet.egg*
 dist
 build
 *.ipynb_check*
+__pycache__
